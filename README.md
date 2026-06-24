@@ -122,3 +122,5 @@ sudo asterisk -rx "reload"
 o:
 
 sudo systemctl restart asterisk
+
+# clinica-medicaperu
