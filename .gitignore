@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Logs
 logs
 *.log
@@ -141,3 +142,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+=======
+node_modules/
+>>>>>>> 2caa6ef (Backend setup: Node.js server, PostgreSQL (Neon) integration, and Asterisk AMI configuration. Verified database connection)
