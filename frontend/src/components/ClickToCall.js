@@ -10,7 +10,7 @@ const ClickToCall = () => {
       return;
     }
     try {
-      await api.post('/click-to-call', { numero });
+      await api.post('/calls/click-to-call', { numero });
       alert('Llamada iniciada');
     } catch (err) {
       alert('Error al iniciar llamada');

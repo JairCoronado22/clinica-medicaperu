@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import FaceCapture from './FaceCapture';
@@ -105,7 +105,7 @@ const Login = () => {
         )}
 
         <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.9rem' }}>
-          ¿No tienes cuenta? <a href="/register" className="link">Regístrate aquí</a>
+          ¿No tienes cuenta? <Link to="/register" className="link">Regístrate aquí</Link>
         </div>
       </div>
     </div>

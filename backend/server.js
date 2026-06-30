@@ -1,57 +1,52 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
-const socketIO = require('socket.io');
 const http = require('http');
 const dotenv = require('dotenv');
-const AsteriskAmi = require('asterisk-ami'); // ✅ Sin destructuring
+const { initSocket } = require('./src/config/socket');
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+
+// Inicializar Socket.io (instancia UNICA)
+const io = initSocket(server);
+app.set('io', io);
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3001', credentials: true }));
+app.use(express.json({ limit: '10mb' }));
 
 // Rutas
-const authRoutes = require('./src/routes/auth');
-const pacienteRoutes = require('./src/routes/pacientes');
-const doctorRoutes = require('./src/routes/doctores');
-const citaRoutes = require('./src/routes/citas');
-const llamadaRoutes = require('./src/routes/llamadas');
+app.use('/api/auth', require('./src/routes/auth'));
+app.use('/api/patients', require('./src/routes/patients'));
+app.use('/api/calls', require('./src/routes/calls'));
+app.use('/api/citas', require('./src/routes/citas'));
 
-app.use('/api/auth', authRoutes);
-app.use('/api/pacientes', pacienteRoutes);
-app.use('/api/doctores', doctorRoutes);
-app.use('/api/citas', citaRoutes);
-app.use('/api/llamadas', llamadaRoutes);
-
-// Conexión a PostgreSQL
-const { Pool } = require('pg');
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-// Conexión a Asterisk (AMI)
-const amiClient = new AsteriskAmi({  // ✅ Sin destructuring
-  host: process.env.AMI_HOST,
-  port: process.env.AMI_PORT,
-  login: process.env.AMI_USER,        // ✅ 'username' → 'login'
-  password: process.env.AMI_PASSWORD,
-});
-
-amiClient.connect();                  // ✅ Conectar explícitamente
-
-amiClient.on('ami_data', (data) => { // ✅ 'NewChannel' → 'ami_data'
-  if (data.event === 'Newchannel') {
-    io.emit('llamada_entrante', { caller_id: data.calleridnum });
-  }
-});
+// Health check
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 // Iniciar servidor
-server.listen(process.env.PORT, () => {
-  console.log(`Backend en http://localhost:${process.env.PORT}`);
-}); // ✅ Eliminar el '2' al final
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[${new Date().toISOString()}] ✅ Backend corriendo en http://localhost:${PORT}`);
+});
+
+// ─── Eventos de ciclo de vida ──────────────────────────────────────────────
+
+function logShutdown(reason) {
+  console.log(`[${new Date().toISOString()}] ⛔ Servidor detenido: ${reason}`);
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => logShutdown('SIGTERM'));
+process.on('SIGINT', () => logShutdown('SIGINT'));
+
+process.on('uncaughtException', (err) => {
+  console.error(`[${new Date().toISOString()}] 🔴 Error no capturado:`, err.message);
+  logShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error(`[${new Date().toISOString()}] 🟡 Promesa rechazada:`, reason);
+});

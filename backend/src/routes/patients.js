@@ -3,8 +3,8 @@ const router = express.Router();
 const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
 
-// Obtener lista de pacientes (solo doctor)
-router.get('/', authenticate, authorize(['doctor']), async (req, res) => {
+// Obtener lista de pacientes (doctor/admin)
+router.get('/', authenticate, authorize(['doctor', 'admin']), async (req, res) => {
   try {
     const patients = await User.getAllPatients();
     res.json(patients);
@@ -14,8 +14,8 @@ router.get('/', authenticate, authorize(['doctor']), async (req, res) => {
   }
 });
 
-// Crear paciente (doctor)
-router.post('/', authenticate, authorize(['doctor']), async (req, res) => {
+// Crear paciente (doctor/admin)
+router.post('/', authenticate, authorize(['doctor', 'admin']), async (req, res) => {
   try {
     const { username, password, telefono, faceDescriptor } = req.body;
     if (!username || !password || !telefono) {
@@ -35,8 +35,8 @@ router.post('/', authenticate, authorize(['doctor']), async (req, res) => {
   }
 });
 
-// Editar paciente (doctor)
-router.put('/:id', authenticate, authorize(['doctor']), async (req, res) => {
+// Editar paciente (doctor/admin)
+router.put('/:id', authenticate, authorize(['doctor', 'admin']), async (req, res) => {
   try {
     const { id } = req.params;
     const { username, telefono, faceDescriptor } = req.body;
@@ -49,8 +49,8 @@ router.put('/:id', authenticate, authorize(['doctor']), async (req, res) => {
   }
 });
 
-// Eliminar paciente (doctor)
-router.delete('/:id', authenticate, authorize(['doctor']), async (req, res) => {
+// Eliminar paciente (doctor/admin)
+router.delete('/:id', authenticate, authorize(['doctor', 'admin']), async (req, res) => {
   try {
     const { id } = req.params;
     const deleted = await User.deletePatient(id);
