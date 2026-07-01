@@ -49,7 +49,7 @@ function App() {
 // Componente auxiliar para decidir dashboard según rol
 const DashboardRouter = () => {
   const { user } = useAuth();
-  return user?.role === 'doctor' ? <DashboardDoctor /> : <DashboardPatient />;
+  return user?.role === 'doctor' || user?.role === 'admin' ? <DashboardDoctor /> : <DashboardPatient />;
 };
 
 export default App;

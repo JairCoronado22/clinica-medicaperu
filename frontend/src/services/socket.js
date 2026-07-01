@@ -1,7 +1,11 @@
 import { io } from 'socket.io-client';
 
-const socket = io('http://localhost:3000', {
+const socket = io({
   transports: ['websocket', 'polling'],
 });
+
+export const joinRoom = (userId) => {
+  socket.emit('join', userId);
+};
 
 export default socket;

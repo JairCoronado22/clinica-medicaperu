@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import PatientList from './PatientList';
 import PatientForm from './PatientForm';
 import CallNotification from './CallNotification';
 import ClickToCall from './ClickToCall';
-import socket from '../services/socket';
+import socket, { joinRoom } from '../services/socket';
+import CallPanel, { IncomingCallAlert } from './CallPanel';
 
 const DashboardDoctor = () => {
   const { user, logout } = useAuth();
@@ -19,12 +20,133 @@ const DashboardDoctor = () => {
   const [patients, setPatients] = useState([]);
   const [citasCount, setCitasCount] = useState(0);
 
+  const [callState, setCallState] = useState('idle');
+  const [peerConnection, setPeerConnection] = useState(null);
+  const [localStream, setLocalStream] = useState(null);
+  const [incomingOffer, setIncomingOffer] = useState(null);
+  const [callerSocketId, setCallerSocketId] = useState(null);
+  const [callerName, setCallerName] = useState('');
+  const [targetPatient, setTargetPatient] = useState(null);
+  const remoteAudioRef = React.useRef(null);
+  const pcRef = useRef(null);
+  const callerSocketIdRef = useRef(null);
+
+  useEffect(() => {
+    if (user?.id) joinRoom(user.id);
+  }, [user]);
+
   useEffect(() => {
     socket.on('llamada-entrante', (data) => {
       setIncomingCall(data);
     });
-    return () => socket.off('llamada-entrante');
+    socket.on('incoming-call', ({ from, offer, callerName: name }) => {
+      setCallerSocketId(from);
+      callerSocketIdRef.current = from;
+      setIncomingOffer(offer);
+      setCallerName(name || 'Paciente');
+    });
+    socket.on('call-accepted', async ({ answer }) => {
+      const pc = pcRef.current;
+      if (pc) {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        setCallState('connected');
+      }
+    });
+    socket.on('ice-candidate', async ({ candidate }) => {
+      const pc = pcRef.current;
+      if (pc) {
+        try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
+        catch (e) { /* ignore */ }
+      }
+    });
+    socket.on('call-ended', () => {
+      hangupCall();
+    });
+    return () => {
+      socket.off('llamada-entrante');
+      socket.off('incoming-call');
+      socket.off('call-accepted');
+      socket.off('ice-candidate');
+      socket.off('call-ended');
+    };
   }, []);
+
+  const getLocalStream = async () => {
+    if (localStream) return localStream;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setLocalStream(stream);
+      return stream;
+    } catch (err) {
+      alert('Error al acceder al micrófono');
+      return null;
+    }
+  };
+
+  const startCall = async (patient) => {
+    const stream = await getLocalStream();
+    if (!stream) return;
+    setTargetPatient(patient);
+    setCallerName(patient.username);
+    setCallState('calling');
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+    pc.onicecandidate = (e) => {
+      if (e.candidate) socket.emit('ice-candidate', { targetUserId: patient.id, candidate: e.candidate });
+    };
+    pc.ontrack = (e) => {
+      if (remoteAudioRef.current) remoteAudioRef.current.srcObject = e.streams[0];
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit('call-user', { targetUserId: patient.id, offer, callerName: user?.username });
+    setPeerConnection(pc);
+    pcRef.current = pc;
+  };
+
+  const answerIncomingCall = async () => {
+    const stream = await getLocalStream();
+    if (!stream) return;
+    setIncomingOffer(null);
+    setCallState('connected');
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    stream.getTracks().forEach(t => pc.addTrack(t, stream));
+    pc.onicecandidate = (e) => {
+      if (e.candidate) socket.emit('ice-candidate', { targetSocketId: callerSocketId, candidate: e.candidate });
+    };
+    pc.ontrack = (e) => {
+      if (remoteAudioRef.current) remoteAudioRef.current.srcObject = e.streams[0];
+    };
+    await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    socket.emit('accept-call', { targetSocketId: callerSocketId, answer });
+    setPeerConnection(pc);
+    pcRef.current = pc;
+  };
+
+  const hangupCall = () => {
+    if (pcRef.current) pcRef.current.close();
+    if (localStream) localStream.getTracks().forEach(t => t.stop());
+    if (callerSocketIdRef.current) {
+      socket.emit('end-call', { targetSocketId: callerSocketIdRef.current });
+    } else if (targetPatient) {
+      socket.emit('end-call', { targetUserId: targetPatient.id });
+    }
+    pcRef.current = null;
+    callerSocketIdRef.current = null;
+    setPeerConnection(null);
+    setLocalStream(null);
+    setCallState('idle');
+    setIncomingOffer(null);
+    setCallerSocketId(null);
+    setTargetPatient(null);
+  };
+
+  const rejectCall = () => {
+    setIncomingOffer(null);
+    setCallerSocketId(null);
+  };
 
   useEffect(() => {
     api.get('/patients').then(r => setPatients(r.data)).catch(() => {});
@@ -57,6 +179,25 @@ const DashboardDoctor = () => {
 
   return (
     <div className="app-container">
+      <audio ref={remoteAudioRef} autoPlay />
+
+      {incomingOffer && (
+        <IncomingCallAlert
+          callerName={callerName}
+          onAccept={answerIncomingCall}
+          onReject={rejectCall}
+        />
+      )}
+
+      {(callState === 'calling' || callState === 'connected') && (
+        <CallPanel
+          inCall={callState === 'connected'}
+          isCalling={callState === 'calling'}
+          callerName={callerName}
+          onHangup={hangupCall}
+        />
+      )}
+
       <div className="header-actions">
         <span style={{ fontWeight: 500 }}>👨‍⚕️ Dr. {user?.username}</span>
         <button onClick={logout} className="btn-secondary">Cerrar sesión</button>
@@ -152,7 +293,7 @@ const DashboardDoctor = () => {
 
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3>Pacientes</h3>
+          <h3>👥 Pacientes</h3>
           <button className="btn-primary" onClick={() => { setSelectedPatient(null); setShowForm(true); }}>
             + Nuevo paciente
           </button>
@@ -164,7 +305,7 @@ const DashboardDoctor = () => {
             onSuccess={() => window.location.reload()}
           />
         )}
-        <PatientList onEdit={(patient) => { setSelectedPatient(patient); setShowForm(true); }} onLoad={handlePatientsLoaded} />
+        <PatientList onEdit={(patient) => { setSelectedPatient(patient); setShowForm(true); }} onLoad={handlePatientsLoaded} onCall={startCall} />
       </div>
 
       {incomingCall && (

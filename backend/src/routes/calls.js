@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { exec } = require('child_process');
 const User = require('../models/User');
 const { getIO } = require('../config/socket');
+const { callPatient } = require('../Services/twilioService');
 
 // Endpoint que recibe notificación de Asterisk (llamada entrante)
 router.all('/llamada-entrante', async (req, res) => {
@@ -62,13 +62,12 @@ router.post('/simular-llamada', async (req, res) => {
       },
     });
 
-    // También originar llamada real por Asterisk al doctor
-    const { makeCall } = require('../Services/asterisk');
-    makeCall({
-      number: user.telefono,
-      callerid: user.telefono,
-      calleridName: user.username,
-    });
+    // Llamar via Twilio al doctor y conectar con paciente
+    const { callPatient } = require('../Services/twilioService');
+    const doctorPhone = process.env.DOCTOR_PHONE;
+    if (doctorPhone && user.telefono) {
+      callPatient(doctorPhone, user.telefono, user.username);
+    }
 
     res.json({ message: 'Llamada simulada enviada', paciente: user });
   } catch (err) {
@@ -81,19 +80,12 @@ router.post('/simular-llamada', async (req, res) => {
 router.post('/click-to-call', async (req, res) => {
   try {
     const { numero } = req.body;
+    const doctorPhone = process.env.DOCTOR_PHONE;
     if (!numero) return res.status(400).json({ error: 'Número requerido' });
+    if (!doctorPhone) return res.status(400).json({ error: 'DOCTOR_PHONE no configurado' });
 
-    // Ejecutar comando en Asterisk para realizar llamada
-    // Asumimos que el contexto default y la extensión origen es 1000 (doctor)
-    const command = `sudo asterisk -rx "channel originate PJSIP/1000 extension ${numero}@clinica"`;
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error al ejecutar asterisk: ${error}`);
-        return res.status(500).json({ error: 'Error al iniciar llamada' });
-      }
-      console.log(`Llamada iniciada: ${stdout}`);
-    });
-    res.json({ message: 'Llamada iniciada' });
+    await callPatient(doctorPhone, numero, 'Paciente');
+    res.json({ message: 'Llamada iniciada via Twilio' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error interno' });

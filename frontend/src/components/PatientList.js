@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 
-const PatientList = ({ onEdit, onLoad }) => {
+const PatientList = ({ onEdit, onLoad, onCall }) => {
   const [patients, setPatients] = useState([]);
 
   const fetchPatients = async () => {
@@ -47,6 +47,9 @@ const PatientList = ({ onEdit, onLoad }) => {
                 <strong>{p.username}</strong> <span style={{ color: '#64748b', marginLeft: '8px' }}>{p.telefono}</span>
               </div>
               <div>
+                {onCall && (
+                  <button className="btn-primary" style={{ marginRight: '8px' }} onClick={() => onCall(p)}>📞 Llamar</button>
+                )}
                 <button className="btn-secondary" style={{ marginRight: '8px' }} onClick={() => onEdit(p)}>Editar</button>
                 <button className="btn-danger" onClick={() => handleDelete(p.id)}>Eliminar</button>
               </div>
